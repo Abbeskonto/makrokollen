@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Makrokollen</title>
+<meta name="description" content="Räkna kalorier, macros och micros med Livsmedelsverkets databas.">
+<meta name="theme-color" content="#f3f6f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1512" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Makrokollen">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-column mobile app, sticky date header, fixed bottom tab bar, full-screen sheets */
+:root{
+  --bg:#f3f6f2; --surface:#ffffff; --surface2:#e9eee8; --fg:#17211b; --muted:#5e6b62; --line:#d7ded6;
+  --accent:#1d6b47; --accent-fg:#ffffff;
+  --prot:#2f6fd0; --carb:#c98a12; --fat:#c4456a; --kcal:#1d6b47;
+  --low:#b7791f; --ok:#1d6b47; --over:#b42318;
+  --display:"Bricolage Grotesque",ui-rounded,system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1512; --surface:#18201b; --surface2:#222c26; --fg:#e6ede7; --muted:#9aa89e; --line:#2c3730;
+  --accent:#4fbf86; --accent-fg:#06140c; --prot:#6aa0f0; --carb:#e8b04a; --fat:#ee7c9c; --kcal:#4fbf86;
+  --low:#e0a63e; --ok:#4fbf86; --over:#f0705f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1512; --surface:#18201b; --surface2:#222c26; --fg:#e6ede7; --muted:#9aa89e; --line:#2c3730;
+  --accent:#4fbf86; --accent-fg:#06140c; --prot:#6aa0f0; --carb:#e8b04a; --fat:#ee7c9c; --kcal:#4fbf86;
+  --low:#e0a63e; --ok:#4fbf86; --over:#f0705f; color-scheme:dark}
+*{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 calc(96px + env(safe-area-inset-bottom,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding-block:12px 10px;display:flex;align-items:center;gap:8px}
+.brand{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.01em;flex:1;min-width:0}
+.datenav{display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+.datenav button{border:0;background:none;width:32px;height:32px;border-radius:999px;font-size:18px;line-height:1}
+.datenav button:hover{background:var(--surface2)}
+.datenav .d{min-width:88px;text-align:center;font-weight:600;font-size:14px;background:none;border:0;padding:0 4px}
+h2{font-family:var(--display);font-weight:600;font-size:17px;margin:0;letter-spacing:-.005em;text-wrap:balance}
+.lbl{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.view{display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+
+/* Summary */
+.summary{display:grid;grid-template-columns:132px 1fr;gap:16px;align-items:center}
+.ring{position:relative;width:132px;height:132px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.ring .big{font-family:var(--display);font-weight:700;font-size:28px;line-height:1}
+.ring .sub{font-size:12px;color:var(--muted)}
+.macros{display:flex;flex-direction:column;gap:10px;min-width:0}
+.mrow .top{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.mrow .top b{font-weight:600}
+.mrow .top span{color:var(--muted)}
+.bar{height:8px;border-radius:99px;background:var(--surface2);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;border-radius:99px;transition:width .3s}
+.left{font-size:13px;color:var(--muted);margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+
+/* Meals */
+.meal{padding:0;overflow:hidden}
+.meal .mh{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.meal .mh h2{flex:1}
+.meal .mh .k{font-size:13px;color:var(--muted)}
+.addbtn{border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600}
+.item{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--line);width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0}
+.item:hover{background:var(--surface2)}
+.item .n{flex:1;min-width:0}
+.item .n div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.item .n div:last-child{font-size:12px;color:var(--muted)}
+.item .kc{font-weight:600;font-size:14px}
+.dots{display:inline-flex;gap:8px}
+.dots b{font-weight:500}
+.p{color:var(--prot)} .cc{color:var(--carb)} .f{color:var(--fat)}
+.empty{padding:16px;color:var(--muted);font-size:14px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+
+/* Tabs */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);align-items:center}
+nav.tabs button{border:0;background:none;padding:8px 0 10px;font-size:11px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button[aria-current="page"]{color:var(--accent)}
+nav.tabs .plus{justify-self:center;width:52px;height:52px;border-radius:999px;background:var(--accent);color:var(--accent-fg);display:flex;align-items:center;justify-content:center;padding:0;margin-top:-18px;box-shadow:0 4px 14px rgb(0 0 0 / .18)}
+nav.tabs .plus svg{width:26px;height:26px}
+
+/* Micros */
+.mic{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line)}
+.mic:first-of-type{border-top:0}
+.mic .nm{font-weight:500}
+.mic .vl{font-size:13px;color:var(--muted);text-align:right}
+.mic .bar{grid-column:1 / -1;margin-top:0;height:6px}
+.pct{font-weight:600;color:var(--fg)}
+.note{font-size:12px;color:var(--muted)}
+
+/* History */
+.chart{display:flex;align-items:flex-end;gap:6px;height:160px;position:relative;padding-top:8px}
+.chart .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;min-width:0}
+.chart .col i{width:100%;max-width:28px;border-radius:6px 6px 2px 2px;background:var(--accent);opacity:.85}
+.chart .col.over i{background:var(--over)}
+.chart .col.today i{opacity:1}
+.chart .col span{font-size:10px;color:var(--muted)}
+.chart .goal{position:absolute;left:0;right:0;border-top:1.5px dashed var(--muted);opacity:.6}
+.chart .goal em{position:absolute;right:0;top:-18px;font-size:10px;font-style:normal;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.stats div{display:flex;flex-direction:column}
+.stats b{font-family:var(--display);font-size:18px}
+.stats span{font-size:11px;color:var(--muted)}
+
+/* Forms */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+input[type=text],input[type=number],input[type=search],select{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;min-width:0}
+.seg{display:flex;background:var(--surface2);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:none;border-radius:8px;padding:8px 6px;font-size:14px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgb(0 0 0 / .12);font-weight:600}
+.btn{border:0;border-radius:12px;padding:12px 16px;font-weight:600;background:var(--accent);color:var(--accent-fg)}
+.btn.ghost{background:var(--surface2);color:var(--fg)}
+.btn.danger{background:none;color:var(--over);border:1px solid var(--line)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.targets{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.targets .t{background:var(--surface2);border-radius:10px;padding:10px;display:flex;flex-direction:column}
+.targets .t b{font-family:var(--display);font-size:20px}
+.targets .t span{font-size:11px;color:var(--muted)}
+.status{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.status i{width:8px;height:8px;border-radius:9px;background:var(--muted)}
+.status.cloud i{background:var(--ok)}
+textarea{width:100%;min-height:90px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.4 ui-monospace,monospace;color:var(--fg)}
+
+/* Sheet */
+.sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
+.sheet .sh{padding-top:calc(env(safe-area-inset-top,0px) + 10px);padding-bottom:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);background:var(--bg)}
+.sheet .sh h2{flex:1}
+.sheet .sb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet .sb .in{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+.x{border:0;background:var(--surface2);width:36px;height:36px;border-radius:999px;font-size:18px}
+.res{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.res button{display:flex;gap:10px;align-items:center;text-align:left;padding:11px 14px;border:0;border-top:1px solid var(--line);background:none;width:100%}
+.res button:first-child{border-top:0}
+.res button:hover{background:var(--surface2)}
+.res .n{flex:1;min-width:0}
+.res .n div:last-child{font-size:12px;color:var(--muted)}
+.res .tag{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);border:1px solid currentColor;border-radius:4px;padding:0 4px;margin-left:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px}
+.chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.label{background:var(--surface);border:2px solid var(--fg);border-radius:6px;padding:10px 12px}
+.label h3{font-family:var(--display);font-size:20px;margin:0 0 2px}
+.label .lr{display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);font-size:14px}
+.label .lr.thick{border-top:6px solid var(--fg)}
+.label .lr.ind{padding-left:14px;color:var(--muted)}
+.gram{display:flex;align-items:center;gap:8px}
+.gram input{font-size:22px;font-weight:600;text-align:center;max-width:120px}
+.hint{background:var(--surface2);border-radius:12px;padding:12px 14px;font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:13px;font-weight:500;z-index:60}
+@media (max-width:380px){.summary{grid-template-columns:110px 1fr}.ring{width:110px;height:110px}.ring .big{font-size:23px}.targets,.stats{grid-template-columns:repeat(2,1fr)}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Makrokollen</div>
+    <div class="datenav" id="datenav">
+      <button id="prevDay" aria-label="Föregående dag">‹</button>
+      <button class="d" id="dateLbl" aria-label="Gå till idag">Idag</button>
+      <button id="nextDay" aria-label="Nästa dag">›</button>
+    </div>
+  </header>
+  <main id="main" class="view"></main>
+</div>
+
+<nav class="tabs" aria-label="Huvudmeny"><div class="in">
+  <button data-tab="dag" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Dag</button>
+  <button data-tab="micros"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 3h6M10 3v6L5 19a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2l-5-10V3"/><path d="M7.5 15h9"/></svg>Micros</button>
+  <button class="plus" id="plusBtn" aria-label="Lägg till mat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button data-tab="historik"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M10 20V4M15 20v-7M20 20v-11"/></svg>Historik</button>
+  <button data-tab="mal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".5"/></svg>Mål</button>
+</div></nav>
+
+<div id="sheetRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+(()=>{
+"use strict";
+/* ---------- Nutrient definitions ---------- */
+// Index positions follow foods.json "keys"
+let KEYS=["kcal","p","c","f","fib","sug","sat","salt","vitA","vitD","vitE","vitC","b1","b2","b3","b6","fol","b12","ca","fe","mg","k","zn","se","i","ph","na","o3"];
+const KI=k=>KEYS.indexOf(k);
+// Reference intakes, adults, approx. NNR 2023 [man, kvinna]
+const MICROS=[
+ {g:"Vitaminer",k:"vitA",n:"Vitamin A",u:"µg",r:[900,700]},
+ {g:"Vitaminer",k:"vitD",n:"Vitamin D",u:"µg",r:[10,10]},
+ {g:"Vitaminer",k:"vitE",n:"Vitamin E",u:"mg",r:[11,10]},
+ {g:"Vitaminer",k:"vitC",n:"Vitamin C",u:"mg",r:[110,95]},
+ {g:"Vitaminer",k:"b1",n:"Tiamin (B1)",u:"mg",r:[1.2,1.0]},
+ {g:"Vitaminer",k:"b2",n:"Riboflavin (B2)",u:"mg",r:[1.6,1.3]},
+ {g:"Vitaminer",k:"b3",n:"Niacin (B3)",u:"mg",r:[16,14]},
+ {g:"Vitaminer",k:"b6",n:"Vitamin B6",u:"mg",r:[1.8,1.6]},
+ {g:"Vitaminer",k:"fol",n:"Folat",u:"µg",r:[330,330]},
+ {g:"Vitaminer",k:"b12",n:"Vitamin B12",u:"µg",r:[4,4]},
+ {g:"Mineraler",k:"ca",n:"Kalcium",u:"mg",r:[950,950]},
+ {g:"Mineraler",k:"fe",n:"Järn",u:"mg",r:[9,15]},
+ {g:"Mineraler",k:"mg",n:"Magnesium",u:"mg",r:[350,300]},
+ {g:"Mineraler",k:"k",n:"Kalium",u:"mg",r:[3500,3500]},
+ {g:"Mineraler",k:"zn",n:"Zink",u:"mg",r:[11,8]},
+ {g:"Mineraler",k:"se",n:"Selen",u:"µg",r:[90,75]},
+ {g:"Mineraler",k:"i",n:"Jod",u:"µg",r:[150,150]},
+ {g:"Mineraler",k:"ph",n:"Fosfor",u:"mg",r:[700,700]},
+ {g:"Övrigt",k:"fib",n:"Fiber",u:"g",r:[35,25]},
+ {g:"Övrigt",k:"sug",n:"Sockerarter",u:"g",r:null},
+ {g:"Övrigt",k:"sat",n:"Mättat fett",u:"g",r:null,limitPct:.10},
+ {g:"Övrigt",k:"salt",n:"Salt",u:"g",r:null,limit:6},
+];
+const MEALS=[["frukost","Frukost"],["lunch","Lunch"],["middag","Middag"],["mellan","Mellanmål"]];
+const ACT=[[1.2,"Stillasittande","ingen träning"],[1.375,"Lätt aktiv","1–3 pass/vecka"],[1.55,"Aktiv","3–5 pass/vecka"],[1.725,"Mycket aktiv","6–7 pass/vecka"],[1.9,"Extremt aktiv","fysiskt jobb + träning"]];
+const GOALS=[[-500,"Gå ner","≈ −0,5 kg/v"],[-250,"Gå ner lugnt","≈ −0,25 kg/v"],[0,"Behålla",""],[300,"Gå upp","≈ +0,25 kg/v"]];
+
+/* ---------- State ---------- */
+const LS="makrokollen.v1";
+const blank=()=>({profile:{sex:"m",age:30,height:180,weight:80,act:1.55,goal:0,over:{}},days:{},custom:[],recent:[],last:{}});
+let S=blank();
+try{const raw=localStorage.getItem(LS); if(raw){S=Object.assign(blank(),JSON.parse(raw));}}catch(e){}
+let FOODS=new Map(), FLIST=[], foodsReady=false;
+let tab="dag", day=todayKey();
+
+function todayKey(d=new Date()){const z=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());}
+function addDays(k,n){const [y,m,d]=k.split("-").map(Number);return todayKey(new Date(y,m-1,d+n));}
+function dayLabel(k){
+  const t=todayKey(); if(k===t) return "Idag"; if(k===addDays(t,-1)) return "Igår"; if(k===addDays(t,1)) return "Imorgon";
+  const [y,m,d]=k.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("sv-SE",{weekday:"short",day:"numeric",month:"short"});
+}
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const fmt=(v,d=0)=>(Math.round(v*10**d)/10**d).toLocaleString("sv-SE",{minimumFractionDigits:0,maximumFractionDigits:d});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const DIA=/[\u0300-\u036f]/g;
+const norm=s=>s.toLowerCase().normalize("NFD").replace(DIA,"");
+
+/* ---------- Targets ---------- */
+function calcTargets(p=S.profile){
+  const bmr=10*p.weight+6.25*p.height-5*p.age+(p.sex==="m"?5:-161);
+  const tdee=bmr*p.act;
+  const kcal=Math.max(1200,Math.round((tdee+p.goal)/10)*10);
+  const prot=Math.round(p.weight*(p.goal<0?2.0:1.8));
+  const fat=Math.round(kcal*0.27/9);
+  const carb=Math.max(0,Math.round((kcal-prot*4-fat*9)/4));
+  const auto={kcal,p:prot,c:carb,f:fat};
+  const o=p.over||{};
+  return {bmr:Math.round(bmr),tdee:Math.round(tdee),auto,kcal:o.kcal||kcal,p:o.p||prot,c:o.c||carb,f:o.f||fat};
+}
+
+/* ---------- Foods ---------- */
+function foodVals(fid){
+  if(typeof fid==="string"&&fid.startsWith("c:")){const c=S.custom.find(x=>x.id===fid);return c?KEYS.map(k=>+c[k]||0):null;}
+  const f=FOODS.get(fid); return f?f.v:null;
+}
+function foodName(fid){
+  if(typeof fid==="string"&&fid.startsWith("c:")){const c=S.custom.find(x=>x.id===fid);return c?c.name:"Borttaget livsmedel";}
+  const f=FOODS.get(fid); return f?f.name:(foodsReady?"Okänt livsmedel":"Laddar…");
+}
+function sumItems(items){
+  const t=new Array(KEYS.length).fill(0);
+  for(const it of items){const v=foodVals(it.fid); if(!v) continue; for(let i=0;i<v.length;i++) t[i]+=v[i]*it.g/100;}
+  return t;
+}
+function search(q){
+  const toks=norm(q.trim()).split(/\s+/).filter(Boolean); if(!toks.length) return [];
+  const pool=[...S.custom.map(c=>({fid:c.id,name:c.name,nn:norm(c.name),custom:true})),...FLIST];
+  const out=[];
+  for(const f of pool){
+    let score=0,ok=true;
+    for(const t of toks){
+      const i=f.nn.indexOf(t); if(i<0){ok=false;break;}
+      score+= i===0?0:(f.nn[i-1]===" "||f.nn[i-1]===","||f.nn[i-1]==="-")?1:3;
+    }
+    if(ok) out.push([score+(f.custom?-1:0)+f.nn.length/200+(S.recent.includes(f.fid)?-.5:0),f]);
+  }
+  out.sort((a,b)=>a[0]-b[0]); return out.slice(0,60).map(x=>x[1]);
+}
+
+/* ---------- Persistence: local + cloud (claude db) ---------- */
+let cloud=null; // {db,id,ready}
+const dirty=new Set(); let flushT=null, writing=false;
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
+function touch(docKey){ saveLocal(); if(cloud){dirty.add(docKey); clearTimeout(flushT); flushT=setTimeout(flush,700);} }
+function docBody(key){
+  if(key==="profile") return {profile:S.profile,custom:S.custom,recent:S.recent,last:S.last};
+  return {date:key.slice(4),items:S.days[key.slice(4)]||[]};
+}
+async function flush(){
+  if(!cloud||writing) return; writing=true;
+  try{
+    while(dirty.size){
+      const key=dirty.values().next().value; dirty.delete(key);
+      const ref=cloud.db.doc("data/users/"+cloud.id+"/"+key);
+      try{
+        if(key.startsWith("day-")&&!(S.days[key.slice(4)]||[]).length) await ref.delete();
+        else await ref.set(docBody(key));
+      }catch(e){ if(e&&e.code==="invalid_argument"){cloud=null;renderStatus();break;} dirty.add(key); await new Promise(r=>setTimeout(r,1500)); }
+    }
+  }finally{writing=false;}
+}
+/* ---------- Rendering ---------- */
+const $=s=>document.querySelector(s);
+const main=$("#main");
+function ring(val,goal){
+  const r=56,c=2*Math.PI*r,pct=Math.min(1,goal?val/goal:0),over=val>goal*1.05;
+  return `<div class="ring"><svg viewBox="0 0 132 132"><circle cx="66" cy="66" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="12"/><circle cx="66" cy="66" r="${r}" fill="none" stroke="${over?"var(--over)":"var(--kcal)"}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${c*pct} ${c}" opacity="${pct>0?1:0}"/></svg><div class="c"><div class="big num">${fmt(val)}</div><div class="sub num">av ${fmt(goal)} kcal</div></div></div>`;
+}
+function mrow(name,cls,val,goal){
+  const pct=goal?Math.min(100,val/goal*100):0;
+  return `<div class="mrow"><div class="top"><b class="${cls}">${name}</b><span class="num">${fmt(val)} / ${fmt(goal)} g</span></div><div class="bar"><i style="width:${pct}%;background:var(--${cls==="cc"?"carb":cls==="p"?"prot":"fat"})"></i></div></div>`;
+}
+function renderDay(){
+  const items=S.days[day]||[]; const T=calcTargets(); const t=sumItems(items);
+  const kc=t[KI("kcal")],p=t[KI("p")],c=t[KI("c")],f=t[KI("f")];
+  const rem=T.kcal-kc;
+  let h=`<section class="panel" aria-label="Dagens summering"><div class="summary">${ring(kc,T.kcal)}<div class="macros">${mrow("Protein","p",p,T.p)}${mrow("Kolhydrater","cc",c,T.c)}${mrow("Fett","f",f,T.f)}</div></div>
+  <div class="left num"><span>${rem>=0?`<b>${fmt(rem)}</b> kcal kvar`:`<b style="color:var(--over)">${fmt(-rem)}</b> kcal över`}</span><span>Fiber ${fmt(t[KI("fib")],1)} g · Salt ${fmt(t[KI("salt")],1)} g</span></div></section>`;
+  for(const [mk,mn] of MEALS){
+    const mi=items.filter(x=>x.meal===mk); const mt=sumItems(mi);
+    h+=`<section class="panel meal"><div class="mh"><h2>${mn}</h2><span class="k num">${mi.length?fmt(mt[0])+" kcal":""}</span><button class="addbtn" data-add="${mk}">+ Lägg till</button></div>`;
+    for(const it of mi){
+      const v=foodVals(it.fid)||[];const g=it.g/100;
+      h+=`<button class="item" data-edit="${it.id}"><div class="n"><div>${esc(foodName(it.fid))}</div><div class="num">${fmt(it.g)} g · <span class="dots"><b class="p">P ${fmt((v[1]||0)*g)}</b><b class="cc">K ${fmt((v[2]||0)*g)}</b><b class="f">F ${fmt((v[3]||0)*g)}</b></span></div></div><div class="kc num">${fmt((v[0]||0)*g)}</div></button>`;
+    }
+    h+=`</section>`;
+  }
+  if(!items.length){
+    const y=S.days[addDays(day,-1)];
+    h+=`<div class="empty"><span>Inget loggat ${day===todayKey()?"idag":"den här dagen"} än. Tryck på + för att söka bland Livsmedelsverkets ${foodsReady?fmt(FLIST.length):"2 600"} livsmedel.</span>${y&&y.length?`<button class="btn ghost" id="copyY">Kopiera gårdagens ${y.length} rader</button>`:""}</div>`;
+  }
+  main.innerHTML=h;
+  main.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>openAdd(b.dataset.add));
+  main.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));
+  const cy=$("#copyY"); if(cy) cy.onclick=()=>{S.days[day]=(S.days[addDays(day,-1)]||[]).map(x=>({...x,id:uid()}));touch("day-"+day);render();toast("Gårdagens mat kopierad");};
+}
+function renderMicros(){
+  const items=S.days[day]||[]; const t=sumItems(items); const sx=S.profile.sex==="m"?0:1; const T=calcTargets();
+  let h=`<section class="panel"><h2>Mikronäring ${dayLabel(day).toLowerCase()==="idag"?"idag":dayLabel(day)}</h2><p class="note" style="margin:4px 0 0">Jämfört med rekommenderat dagligt intag för ${S.profile.sex==="m"?"män":"kvinnor"} (ungefärliga värden enligt Nordiska näringsrekommendationer 2023).</p></section>`;
+  let g="";
+  for(const m of MICROS){
+    if(m.g!==g){ if(g) h+=`</section>`; g=m.g; h+=`<section class="panel"><div class="lbl" style="margin-bottom:4px">${g}</div>`; }
+    const v=t[KI(m.k)]||0; let goal=m.r?m.r[sx]:null, pct=null, color="var(--ok)", txt;
+    if(goal){pct=v/goal*100; color=pct>=100?"var(--ok)":pct>=50?"var(--accent)":"var(--low)"; txt=`${fmt(v,v<10?1:0)} / ${fmt(goal,goal<10?1:0)} ${m.u} · <span class="pct">${fmt(pct)} %</span>`;}
+    else if(m.limit){pct=v/m.limit*100; color=pct>100?"var(--over)":"var(--muted)"; txt=`${fmt(v,1)} ${m.u} · max ${m.limit} ${m.u}`;}
+    else if(m.limitPct){const lim=T.kcal*m.limitPct/9; pct=v/lim*100; color=pct>100?"var(--over)":"var(--muted)"; txt=`${fmt(v,1)} ${m.u} · max ≈${fmt(lim)} ${m.u}`;}
+    else txt=`${fmt(v,1)} ${m.u}`;
+    h+=`<div class="mic"><span class="nm">${m.n}</span><span class="vl num">${txt}</span>${pct!==null?`<div class="bar"><i style="width:${Math.min(100,pct)}%;background:${color}"></i></div>`:""}</div>`;
+  }
+  h+=`</section>`;
+  if(!items.length) h=`<div class="empty">Logga mat för att se vitaminer och mineraler.</div>`+h;
+  main.innerHTML=h;
+}
+function renderHist(){
+  const T=calcTargets(); const days=[];
+  for(let i=13;i>=0;i--){const k=addDays(day,-i);const t=sumItems(S.days[k]||[]);days.push({k,kc:t[0],p:t[1],c:t[2],f:t[3],n:(S.days[k]||[]).length});}
+  const max=Math.max(T.kcal*1.25,...days.map(d=>d.kc));
+  const logged=days.filter(d=>d.n);
+  const avg=k=>logged.length?logged.reduce((s,d)=>s+d[k],0)/logged.length:0;
+  let h=`<section class="panel"><h2>Senaste 14 dagarna</h2><p class="note" style="margin:2px 0 10px">Kalorier per dag. Streckad linje är ditt mål.</p><div class="chart" role="img" aria-label="Kalorier per dag">`;
+  h+=`<div class="goal" style="bottom:${T.kcal/max*100*(152/160)+12}px"><em class="num">${fmt(T.kcal)}</em></div>`;
+  for(const d of days){const [y,m,dd]=d.k.split("-").map(Number);
+    h+=`<div class="col ${d.kc>T.kcal*1.05?"over":""} ${d.k===day?"today":""}" title="${d.k}: ${fmt(d.kc)} kcal"><i style="height:${d.kc/max*(152-16)}px"></i><span class="num">${dd}</span></div>`;}
+  h+=`</div><div class="stats num"><div><b>${fmt(avg("kc"))}</b><span>snitt kcal</span></div><div><b class="p">${fmt(avg("p"))}</b><span>snitt protein g</span></div><div><b class="cc">${fmt(avg("c"))}</b><span>snitt kolh. g</span></div><div><b class="f">${fmt(avg("f"))}</b><span>snitt fett g</span></div></div><p class="note" style="margin:10px 0 0">Snitten räknas på de ${logged.length} dagar du har loggat.</p></section>`;
+  main.innerHTML=h;
+}
+function renderMal(){
+  const p=S.profile, T=calcTargets();
+  const seg=(name,opts,cur)=>`<div class="seg" data-seg="${name}">${opts.map(([v,l])=>`<button type="button" data-v="${v}" aria-pressed="${String(v)===String(cur)}">${l}</button>`).join("")}</div>`;
+  let h=`<section class="panel"><h2>Dina dagliga mål</h2><div class="targets num" style="margin-top:12px"><div class="t"><b>${fmt(T.kcal)}</b><span>kcal</span></div><div class="t"><b class="p">${T.p}</b><span>protein g</span></div><div class="t"><b class="cc">${T.c}</b><span>kolhydrater g</span></div><div class="t"><b class="f">${T.f}</b><span>fett g</span></div></div>
+  <p class="note" style="margin:10px 0 0">BMR ${fmt(T.bmr)} kcal · underhåll ≈${fmt(T.tdee)} kcal. Räknat med Mifflin-St Jeor, protein ${p.goal<0?"2,0":"1,8"} g/kg, fett 27 % av energin och resten kolhydrater.</p></section>
+  <section class="panel" style="display:flex;flex-direction:column;gap:12px"><h2>Om dig</h2>
+  <div class="field"><label>Kön</label>${seg("sex",[["m","Man"],["k","Kvinna"]],p.sex)}</div>
+  <div class="grid2"><div class="field"><label for="pAge">Ålder</label><input id="pAge" type="number" inputmode="numeric" value="${p.age}" data-p="age"></div>
+  <div class="field"><label for="pH">Längd (cm)</label><input id="pH" type="number" inputmode="numeric" value="${p.height}" data-p="height"></div>
+  <div class="field"><label for="pW">Vikt (kg)</label><input id="pW" type="number" inputmode="decimal" step="0.1" value="${p.weight}" data-p="weight"></div>
+  <div class="field" style="grid-column:1 / -1"><label for="pAct">Aktivitet</label><select id="pAct" data-p="act">${ACT.map(([v,l,d])=>`<option value="${v}" ${v===p.act?"selected":""}>${l} – ${d}</option>`).join("")}</select></div></div>
+  <div class="field"><label>Mål</label>${seg("goal",GOALS.map(([v,l])=>[v,l]),p.goal)}<span class="note">${(GOALS.find(g=>g[0]===p.goal)||[])[2]||"Äta på underhållsnivå"}</span></div></section>
+  <section class="panel" style="display:flex;flex-direction:column;gap:12px"><h2>Justera själv</h2><p class="note" style="margin:0">Lämna tomt för att använda det uträknade värdet.</p>
+  <div class="grid2"><div class="field"><label for="oK">Kalorier</label><input id="oK" type="number" inputmode="numeric" placeholder="${T.auto.kcal}" value="${p.over.kcal||""}" data-o="kcal"></div>
+  <div class="field"><label for="oP">Protein (g)</label><input id="oP" type="number" inputmode="numeric" placeholder="${T.auto.p}" value="${p.over.p||""}" data-o="p"></div>
+  <div class="field"><label for="oC">Kolhydrater (g)</label><input id="oC" type="number" inputmode="numeric" placeholder="${T.auto.c}" value="${p.over.c||""}" data-o="c"></div>
+  <div class="field"><label for="oF">Fett (g)</label><input id="oF" type="number" inputmode="numeric" placeholder="${T.auto.f}" value="${p.over.f||""}" data-o="f"></div></div></section>
+  <section class="panel" style="display:flex;flex-direction:column;gap:10px"><h2>Egna livsmedel</h2>
+  ${S.custom.length?`<div class="res">${S.custom.map(c=>`<button data-cust="${c.id}"><div class="n"><div>${esc(c.name)}</div><div class="num">${fmt(c.kcal)} kcal · P ${fmt(c.p,1)} · K ${fmt(c.c,1)} · F ${fmt(c.f,1)} per 100 g</div></div></button>`).join("")}</div>`:`<p class="note" style="margin:0">Lägg till proteinpulver, bars eller annat som saknas hos Livsmedelsverket. Värdena finns på förpackningen.</p>`}
+  <div><button class="btn ghost" id="newCust">+ Nytt livsmedel</button></div></section>
+  <section class="panel" style="display:flex;flex-direction:column;gap:10px"><h2>Din data</h2><div class="status" id="status"></div>
+  <p class="note" style="margin:0">Allt du loggar stannar i den här telefonen. Delar du länken får mottagaren en egen, tom logg.</p>
+  <div class="row"><button class="btn ghost" id="shareApp">Dela appen</button><button class="btn ghost" id="exp">Kopiera säkerhetskopia</button><button class="btn ghost" id="imp">Återställ från kopia</button></div><div id="impBox"></div></section>
+  <div class="hint" ${(navigator.standalone||matchMedia("(display-mode: standalone)").matches)?"hidden":""}><span>📱</span><span><b>Installera på iPhone:</b> öppna sidan i Safari, tryck på dela-knappen och välj ”Lägg till på hemskärmen”. Appen öppnas då i helskärm och fungerar utan nät.</span></div>
+  <p class="note">Näringsdata: Livsmedelsverkets livsmedelsdatabas (version 2026). Referensvärden är ungefärliga och ersätter inte råd från vården.</p>`;
+  main.innerHTML=h; renderStatus();
+  main.querySelectorAll("[data-seg]").forEach(s=>s.querySelectorAll("button").forEach(b=>b.onclick=()=>{const k=s.dataset.seg;S.profile[k]=k==="goal"?+b.dataset.v:b.dataset.v;touch("profile");renderMal();}));
+  main.querySelectorAll("[data-p]").forEach(i=>i.onchange=()=>{const v=parseFloat(i.value);if(!isNaN(v)&&v>0){S.profile[i.dataset.p]=v;touch("profile");renderMal();}});
+  main.querySelectorAll("[data-o]").forEach(i=>i.onchange=()=>{const v=parseFloat(i.value);if(!isNaN(v)&&v>0)S.profile.over[i.dataset.o]=Math.round(v);else delete S.profile.over[i.dataset.o];touch("profile");renderMal();});
+  main.querySelectorAll("[data-cust]").forEach(b=>b.onclick=()=>openCustom(b.dataset.cust));
+  $("#newCust").onclick=()=>openCustom(null);
+  $("#shareApp").onclick=async()=>{const url=location.href.split("#")[0];try{if(navigator.share){await navigator.share({title:"Makrokollen",text:"Räkna macros och micros med Livsmedelsverkets data",url});return;}await navigator.clipboard.writeText(url);toast("Länken är kopierad");}catch(e){}};
+  $("#exp").onclick=async()=>{const txt=JSON.stringify(S);try{await navigator.clipboard.writeText(txt);toast("Kopierat. Spara texten i t.ex. Anteckningar.");}catch(e){$("#impBox").innerHTML=`<textarea readonly id="expTxt">${esc(txt)}</textarea>`;$("#expTxt").select();toast("Markera och kopiera texten");}};
+  $("#imp").onclick=()=>{$("#impBox").innerHTML=`<div style="display:flex;flex-direction:column;gap:8px"><textarea id="impTxt" placeholder="Klistra in din säkerhetskopia här"></textarea><div><button class="btn" id="impGo">Återställ</button></div></div>`;
+    $("#impGo").onclick=()=>{try{const d=JSON.parse($("#impTxt").value);if(!d||!d.profile||!d.days) throw 0;S=Object.assign(blank(),d);saveLocal();if(cloud){dirty.add("profile");Object.keys(S.days).forEach(k=>dirty.add("day-"+k));flush();}toast("Återställt");render();}catch(e){toast("Texten gick inte att läsa. Klistra in hela kopian.");}};};
+}
+function renderStatus(){
+  const el=$("#status"); if(!el) return;
+  el.className="status"+(cloud?" cloud":"");
+  el.innerHTML=`<i></i>Sparas bara på den här enheten. Ta en säkerhetskopia ibland.`;
+}
+function render(){
+  $("#dateLbl").textContent=dayLabel(day);
+  document.querySelectorAll("nav.tabs [data-tab]").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
+  $("#datenav").style.visibility=tab==="mal"?"hidden":"visible";
+  ({dag:renderDay,micros:renderMicros,historik:renderHist,mal:renderMal})[tab]();
+}
+
+/* ---------- Sheets ---------- */
+const root=$("#sheetRoot");
+function sheet(title,html,onBack){
+  root.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sh">${onBack?`<button class="x" id="shBack" aria-label="Tillbaka">‹</button>`:""}<h2>${esc(title)}</h2><button class="x" id="shX" aria-label="Stäng">✕</button></div><div class="sb"><div class="in">${html}</div></div></div>`;
+  $("#shX").onclick=closeSheet; if(onBack) $("#shBack").onclick=onBack;
+  document.body.style.overflow="hidden";
+}
+function closeSheet(){root.innerHTML="";document.body.style.overflow="";}
+function guessMeal(){const h=new Date().getHours();return h<10?"frukost":h<14?"lunch":h<17?"mellan":h<21?"middag":"mellan";}
+
+function openAdd(meal=guessMeal(),q=""){
+  sheet("Lägg till mat",`<input type="search" id="q" placeholder="Sök, t.ex. havregryn, kyckling, banan" autocomplete="off" value="${esc(q)}" enterkeyhint="search">
+  <div class="chips" id="mealChips">${MEALS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===meal}">${n}</button>`).join("")}</div>
+  <div id="results"></div>`);
+  const qi=$("#q"); let m=meal;
+  $("#mealChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{m=b.dataset.m;$("#mealChips").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));});
+  const show=()=>{
+    const v=qi.value; let list,head;
+    if(!foodsReady){$("#results").innerHTML=`<p class="note">Laddar livsmedelsdatabasen…</p>`;return;}
+    if(v.trim()){list=search(v);head=list.length?"":`<p class="note">Hittade inget på ”${esc(v)}”. Prova ett kortare ord, eller lägg till ett eget livsmedel under Mål.</p>`;}
+    else{list=S.recent.map(fid=>({fid,name:foodName(fid),custom:String(fid).startsWith("c:")})).filter(x=>foodVals(x.fid));head=list.length?`<div class="lbl">Senast använda</div>`:`<p class="note">Skriv för att söka. Tips: sök på flera ord, t.ex. ”nöt färs” eller ”mjölk 3”.</p>`;}
+    $("#results").innerHTML=head+(list.length?`<div class="res">${list.map(f=>{const vv=foodVals(f.fid);return `<button data-f="${f.fid}"><div class="n"><div>${esc(f.name)}${f.custom?`<span class="tag">Eget</span>`:""}</div><div class="num">${fmt(vv[0])} kcal · P ${fmt(vv[1],1)} · K ${fmt(vv[2],1)} · F ${fmt(vv[3],1)} /100 g</div></div></button>`;}).join("")}</div>`:"");
+    $("#results").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{const fid=b.dataset.f.startsWith("c:")?b.dataset.f:+b.dataset.f;openPortion(fid,{meal:m,back:()=>openAdd(m,qi.value)});});
+  };
+  let t; qi.oninput=()=>{clearTimeout(t);t=setTimeout(show,80);};
+  show(); setTimeout(()=>qi.focus(),50);
+}
+
+function openPortion(fid,{meal,back,item}={}){
+  const v=foodVals(fid); if(!v) return;
+  let g=item?item.g:(S.last[fid]||100), m=item?item.meal:meal;
+  const name=foodName(fid);
+  sheet(item?"Ändra":name.length>28?"Mängd":name,`<div><h2 style="font-size:20px">${esc(name)}</h2>${typeof fid==="number"?`<span class="note">Livsmedelsverket nr ${fid}</span>`:`<span class="note">Eget livsmedel</span>`}</div>
+  <div class="gram"><button class="x" id="gMinus" aria-label="Minska">−</button><input id="g" type="number" inputmode="decimal" value="${g}" aria-label="Gram"><span>gram</span><button class="x" id="gPlus" aria-label="Öka">+</button></div>
+  <div class="chips" id="gChips">${[25,50,100,150,200,300].map(x=>`<button data-g="${x}">${x} g</button>`).join("")}</div>
+  <div class="chips" id="mChips">${MEALS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===m}">${n}</button>`).join("")}</div>
+  <div class="label" id="lab"></div>
+  <div class="row"><button class="btn" id="save" style="flex:1">${item?"Spara":"Lägg till"}</button>${item?`<button class="btn danger" id="del">Ta bort</button>`:""}</div>`, back||null);
+  const gi=$("#g");
+  const upd=()=>{const gg=Math.max(0,parseFloat(gi.value)||0),r=gg/100,x=k=>v[KI(k)]*r;
+    const top=MICROS.filter(mm=>mm.r).map(mm=>[mm,x(mm.k)/mm.r[S.profile.sex==="m"?0:1]]).sort((a,b)=>b[1]-a[1]).slice(0,4).filter(z=>z[1]>=.05);
+    $("#lab").innerHTML=`<h3>Näringsvärde</h3><div class="note" style="margin-bottom:6px">för ${fmt(gg)} g</div>
+    <div class="lr thick"><b>Energi</b><b class="num">${fmt(x("kcal"))} kcal</b></div>
+    <div class="lr"><span>Fett</span><span class="num">${fmt(x("f"),1)} g</span></div><div class="lr ind"><span>varav mättat</span><span class="num">${fmt(x("sat"),1)} g</span></div>
+    <div class="lr"><span>Kolhydrater</span><span class="num">${fmt(x("c"),1)} g</span></div><div class="lr ind"><span>varav sockerarter</span><span class="num">${fmt(x("sug"),1)} g</span></div>
+    <div class="lr"><span>Fiber</span><span class="num">${fmt(x("fib"),1)} g</span></div>
+    <div class="lr"><span>Protein</span><span class="num">${fmt(x("p"),1)} g</span></div>
+    <div class="lr"><span>Salt</span><span class="num">${fmt(x("salt"),2)} g</span></div>
+    ${top.length?`<div class="lr thick"><span class="lbl" style="padding-top:2px">Mest av</span><span></span></div>`+top.map(([mm,pc])=>`<div class="lr"><span>${mm.n}</span><span class="num">${fmt(pc*100)} % av dagsbehov</span></div>`).join(""):""}`;};
+  gi.oninput=upd; upd();
+  $("#gMinus").onclick=()=>{gi.value=Math.max(0,(parseFloat(gi.value)||0)-10);upd();};
+  $("#gPlus").onclick=()=>{gi.value=(parseFloat(gi.value)||0)+10;upd();};
+  $("#gChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{gi.value=b.dataset.g;upd();});
+  $("#mChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{m=b.dataset.m;$("#mChips").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));});
+  $("#save").onclick=()=>{
+    const gg=Math.round((parseFloat(gi.value)||0)*10)/10; if(gg<=0){toast("Ange hur många gram");return;}
+    const list=S.days[day]=S.days[day]||[];
+    if(item){const it=list.find(x=>x.id===item.id); if(it){it.g=gg;it.meal=m;}}
+    else list.push({id:uid(),fid,g:gg,meal:m});
+    S.last[fid]=gg; S.recent=[fid,...S.recent.filter(x=>x!==fid)].slice(0,25);
+    touch("day-"+day); touch("profile"); closeSheet(); tab="dag"; render(); toast(item?"Sparat":`${name.split(",")[0]} tillagd i ${MEALS.find(x=>x[0]===m)[1].toLowerCase()}`);
+  };
+  if(item) $("#del").onclick=()=>{S.days[day]=(S.days[day]||[]).filter(x=>x.id!==item.id);touch("day-"+day);closeSheet();render();toast("Borttaget");};
+}
+function openEdit(id){const it=(S.days[day]||[]).find(x=>x.id===id); if(it) openPortion(it.fid,{item:it});}
+
+function openCustom(id){
+  const c=id?S.custom.find(x=>x.id===id):{name:"",kcal:"",p:"",c:"",f:"",fib:"",sug:"",sat:"",salt:""};
+  const F=[["kcal","Energi (kcal)"],["p","Protein (g)"],["c","Kolhydrater (g)"],["f","Fett (g)"],["fib","Fiber (g)"],["sug","varav socker (g)"],["sat","varav mättat fett (g)"],["salt","Salt (g)"]];
+  sheet(id?"Ändra eget livsmedel":"Nytt livsmedel",`<div class="field"><label for="cName">Namn</label><input id="cName" type="text" value="${esc(c.name)}" placeholder="t.ex. Proteinpulver vanilj"></div>
+  <p class="note" style="margin:0">Skriv värdena per 100 g, som på förpackningens näringsdeklaration.</p>
+  <div class="grid2">${F.map(([k,l])=>`<div class="field"><label for="c_${k}">${l}</label><input id="c_${k}" type="number" inputmode="decimal" step="0.1" value="${c[k]??""}"></div>`).join("")}</div>
+  <div class="row"><button class="btn" id="cSave" style="flex:1">Spara</button>${id?`<button class="btn danger" id="cDel">Ta bort</button>`:""}</div>`);
+  $("#cSave").onclick=()=>{
+    const name=$("#cName").value.trim(); if(!name){toast("Ge livsmedlet ett namn");return;}
+    const o=id?c:{id:"c:"+uid()}; o.name=name; for(const [k] of F) o[k]=parseFloat($("#c_"+k).value)||0;
+    if(!id) S.custom.push(o); touch("profile"); closeSheet(); render(); toast("Sparat");
+  };
+  if(id) $("#cDel").onclick=()=>{S.custom=S.custom.filter(x=>x.id!==id);touch("profile");closeSheet();render();toast("Borttaget");};
+}
+
+let toastT; function toast(msg){$("#toastRoot").innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>$("#toastRoot").innerHTML="",2400);}
+
+/* ---------- Wire up ---------- */
+document.querySelectorAll("nav.tabs [data-tab]").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();window.scrollTo(0,0);});
+$("#plusBtn").onclick=()=>openAdd();
+$("#prevDay").onclick=()=>{day=addDays(day,-1);render();};
+$("#nextDay").onclick=()=>{day=addDays(day,1);render();};
+$("#dateLbl").onclick=()=>{day=todayKey();render();};
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&root.innerHTML)closeSheet();});
+
+render();
+fetch("foods.json").then(r=>r.json()).then(d=>{
+  KEYS=d.keys;
+  for(const r of d.foods){const [nr,name,...v]=r;FOODS.set(nr,{name,v});FLIST.push({fid:nr,name,nn:norm(name)});}
+  foodsReady=true; render(); if(root.innerHTML&&$("#q")) $("#q").dispatchEvent(new Event("input"));
+}).catch(()=>toast("Kunde inte ladda livsmedelsdatabasen. Ladda om sidan."));
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+})();
+</script>
+</body>
+</html>
