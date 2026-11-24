@@ -157,6 +157,13 @@ textarea{width:100%;min-height:90px;background:var(--surface);border:1px solid v
 .res button:hover{background:var(--surface2)}
 .res .n{flex:1;min-width:0}
 .res .n div:last-child{font-size:12px;color:var(--muted)}
+.searchrow{display:flex;gap:8px}
+.searchrow input{flex:1}
+.scanbtn{flex:none;width:46px;border:1px solid var(--line);background:var(--surface);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--accent)}
+.scanbtn svg{width:24px;height:24px}
+#reader{width:100%;border-radius:var(--r);overflow:hidden;background:#000;min-height:240px;position:relative}
+#reader video{width:100%!important;height:auto!important;display:block;object-fit:cover}
+.tag.off{color:var(--muted)}
 .res .tag{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);border:1px solid currentColor;border-radius:4px;padding:0 4px;margin-left:6px}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px}
@@ -237,7 +244,7 @@ const GOALS=[[-500,"Gå ner","≈ −0,5 kg/v"],[-250,"Gå ner lugnt","≈ −0,
 
 /* ---------- State ---------- */
 const LS="makrokollen.v1";
-const blank=()=>({profile:{sex:"m",age:30,height:180,weight:80,act:1.55,goal:0,over:{}},days:{},custom:[],recent:[],last:{}});
+const blank=()=>({profile:{sex:"m",age:30,height:180,weight:80,act:1.55,goal:0,over:{}},days:{},custom:[],recent:[],last:{},prod:{}});
 let S=blank();
 try{const raw=localStorage.getItem(LS); if(raw){S=Object.assign(blank(),JSON.parse(raw));}}catch(e){}
 let FOODS=new Map(), FLIST=[], foodsReady=false;
@@ -269,12 +276,22 @@ function calcTargets(p=S.profile){
 }
 
 /* ---------- Foods ---------- */
+// Open Food Facts products: fid "o:<barcode>". Data from off.json (OFF map) or saved in S.prod once used/looked up online.
+const OFF=new Map(), OLIST=[]; let offReady=false;
+const MACK=["kcal","p","c","f","fib","sug","sat","salt"];
+function offVec(mac,mic){const v=new Array(KEYS.length).fill(0);MACK.forEach((k,i)=>{v[KI(k)]=+mac[i]||0;});if(mic)for(const k in mic){const i=KI(k);if(i>=0)v[i]=+mic[k]||0;}return v;}
+function offRow(code){return OFF.get(code)||S.prod[code]||null;}
+function isOff(fid){return typeof fid==="string"&&fid.startsWith("o:");}
+function isCustom(fid){return typeof fid==="string"&&fid.startsWith("c:");}
+function parseFid(s){return s.startsWith("c:")||s.startsWith("o:")?s:+s;}
 function foodVals(fid){
-  if(typeof fid==="string"&&fid.startsWith("c:")){const c=S.custom.find(x=>x.id===fid);return c?KEYS.map(k=>+c[k]||0):null;}
+  if(isCustom(fid)){const c=S.custom.find(x=>x.id===fid);return c?KEYS.map(k=>+c[k]||0):null;}
+  if(isOff(fid)){const o=offRow(fid.slice(2));return o?o.v:null;}
   const f=FOODS.get(fid); return f?f.v:null;
 }
 function foodName(fid){
-  if(typeof fid==="string"&&fid.startsWith("c:")){const c=S.custom.find(x=>x.id===fid);return c?c.name:"Borttaget livsmedel";}
+  if(isCustom(fid)){const c=S.custom.find(x=>x.id===fid);return c?c.name:"Borttaget livsmedel";}
+  if(isOff(fid)){const o=offRow(fid.slice(2));return o?o.name+(o.brand?", "+o.brand:""):(offReady?"Okänd vara":"Laddar…");}
   const f=FOODS.get(fid); return f?f.name:(foodsReady?"Okänt livsmedel":"Laddar…");
 }
 function sumItems(items){
@@ -284,7 +301,7 @@ function sumItems(items){
 }
 function search(q){
   const toks=norm(q.trim()).split(/\s+/).filter(Boolean); if(!toks.length) return [];
-  const pool=[...S.custom.map(c=>({fid:c.id,name:c.name,nn:norm(c.name),custom:true})),...FLIST];
+  const pool=[...S.custom.map(c=>({fid:c.id,name:c.name,nn:norm(c.name),custom:true})),...FLIST,...OLIST];
   const out=[];
   for(const f of pool){
     let score=0,ok=true;
@@ -292,7 +309,7 @@ function search(q){
       const i=f.nn.indexOf(t); if(i<0){ok=false;break;}
       score+= i===0?0:(f.nn[i-1]===" "||f.nn[i-1]===","||f.nn[i-1]==="-")?1:3;
     }
-    if(ok) out.push([score+(f.custom?-1:0)+f.nn.length/200+(S.recent.includes(f.fid)?-.5:0),f]);
+    if(ok) out.push([score+(f.custom?-1:0)+(f.off?.4:0)+f.nn.length/200+(S.recent.includes(f.fid)?-.5:0),f]);
   }
   out.sort((a,b)=>a[0]-b[0]); return out.slice(0,60).map(x=>x[1]);
 }
@@ -408,7 +425,7 @@ function renderMal(){
   <p class="note" style="margin:0">Allt du loggar stannar i den här telefonen. Delar du länken får mottagaren en egen, tom logg.</p>
   <div class="row"><button class="btn ghost" id="shareApp">Dela appen</button><button class="btn ghost" id="exp">Kopiera säkerhetskopia</button><button class="btn ghost" id="imp">Återställ från kopia</button></div><div id="impBox"></div></section>
   <div class="hint" ${(navigator.standalone||matchMedia("(display-mode: standalone)").matches)?"hidden":""}><span>📱</span><span><b>Installera på iPhone:</b> öppna sidan i Safari, tryck på dela-knappen och välj ”Lägg till på hemskärmen”. Appen öppnas då i helskärm och fungerar utan nät.</span></div>
-  <p class="note">Näringsdata: Livsmedelsverkets livsmedelsdatabas (version 2026). Referensvärden är ungefärliga och ersätter inte råd från vården.</p>`;
+  <p class="note">Näringsdata: Livsmedelsverkets livsmedelsdatabas (version 2026) och Open Food Facts (openfoodfacts.org, ODbL), som är skapad av frivilliga och kan innehålla fel. Referensvärden är ungefärliga och ersätter inte råd från vården.</p>`;
   main.innerHTML=h; renderStatus();
   main.querySelectorAll("[data-seg]").forEach(s=>s.querySelectorAll("button").forEach(b=>b.onclick=()=>{const k=s.dataset.seg;S.profile[k]=k==="goal"?+b.dataset.v:b.dataset.v;touch("profile");renderMal();}));
   main.querySelectorAll("[data-p]").forEach(i=>i.onchange=()=>{const v=parseFloat(i.value);if(!isNaN(v)&&v>0){S.profile[i.dataset.p]=v;touch("profile");renderMal();}});
@@ -439,22 +456,27 @@ function sheet(title,html,onBack){
   $("#shX").onclick=closeSheet; if(onBack) $("#shBack").onclick=onBack;
   document.body.style.overflow="hidden";
 }
-function closeSheet(){root.innerHTML="";document.body.style.overflow="";}
+function closeSheet(){stopScan();root.innerHTML="";document.body.style.overflow="";}
 function guessMeal(){const h=new Date().getHours();return h<10?"frukost":h<14?"lunch":h<17?"mellan":h<21?"middag":"mellan";}
 
 function openAdd(meal=guessMeal(),q=""){
-  sheet("Lägg till mat",`<input type="search" id="q" placeholder="Sök, t.ex. havregryn, kyckling, banan" autocomplete="off" value="${esc(q)}" enterkeyhint="search">
+  sheet("Lägg till mat",`<div class="searchrow"><input type="search" id="q" placeholder="Sök vara eller märke, t.ex. kvarg arla" autocomplete="off" value="${esc(q)}" enterkeyhint="search" aria-label="Sök"><button class="scanbtn" id="scanBtn" aria-label="Skanna streckkod"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M17 8v8"/></svg></button></div>
   <div class="chips" id="mealChips">${MEALS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===meal}">${n}</button>`).join("")}</div>
-  <div id="results"></div>`);
+  <div id="results"></div><div id="online"></div>`);
   const qi=$("#q"); let m=meal;
   $("#mealChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{m=b.dataset.m;$("#mealChips").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));});
+  $("#scanBtn").onclick=()=>openScan(m);
+  const back=()=>openAdd(m,qi.value);
   const show=()=>{
     const v=qi.value; let list,head;
+    $("#online").innerHTML="";
     if(!foodsReady){$("#results").innerHTML=`<p class="note">Laddar livsmedelsdatabasen…</p>`;return;}
-    if(v.trim()){list=search(v);head=list.length?"":`<p class="note">Hittade inget på ”${esc(v)}”. Prova ett kortare ord, eller lägg till ett eget livsmedel under Mål.</p>`;}
-    else{list=S.recent.map(fid=>({fid,name:foodName(fid),custom:String(fid).startsWith("c:")})).filter(x=>foodVals(x.fid));head=list.length?`<div class="lbl">Senast använda</div>`:`<p class="note">Skriv för att söka. Tips: sök på flera ord, t.ex. ”nöt färs” eller ”mjölk 3”.</p>`;}
-    $("#results").innerHTML=head+(list.length?`<div class="res">${list.map(f=>{const vv=foodVals(f.fid);return `<button data-f="${f.fid}"><div class="n"><div>${esc(f.name)}${f.custom?`<span class="tag">Eget</span>`:""}</div><div class="num">${fmt(vv[0])} kcal · P ${fmt(vv[1],1)} · K ${fmt(vv[2],1)} · F ${fmt(vv[3],1)} /100 g</div></div></button>`;}).join("")}</div>`:"");
-    $("#results").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{const fid=b.dataset.f.startsWith("c:")?b.dataset.f:+b.dataset.f;openPortion(fid,{meal:m,back:()=>openAdd(m,qi.value)});});
+    if(/^\d{8,14}$/.test(v.trim())){$("#results").innerHTML=`<div class="res"><button id="byCode"><div class="n"><div>Slå upp streckkod ${esc(v.trim())}</div><div>Söker bland märkesvaror</div></div></button></div>`;$("#byCode").onclick=()=>lookupCode(v.trim(),m,back);return;}
+    if(v.trim()){list=search(v);head=list.length?"":`<p class="note">Hittade inget på ”${esc(v)}” i appen. Prova ett kortare ord, sök online nedan, eller skanna streckkoden.</p>`;}
+    else{list=S.recent.map(fid=>({fid,name:foodName(fid),custom:isCustom(fid),off:isOff(fid)})).filter(x=>foodVals(x.fid));head=list.length?`<div class="lbl">Senast använda</div>`:`<p class="note">Skriv för att söka bland ${fmt(FLIST.length+OLIST.length)} livsmedel och varor, eller tryck på streckkodsknappen för att skanna.</p>`;}
+    $("#results").innerHTML=head+(list.length?`<div class="res">${list.map(f=>{const vv=foodVals(f.fid);return `<button data-f="${esc(f.fid)}"><div class="n"><div>${esc(f.off?foodName(f.fid):f.name)}${f.custom?`<span class="tag">Eget</span>`:""}</div><div class="num">${fmt(vv[0])} kcal · P ${fmt(vv[1],1)} · K ${fmt(vv[2],1)} · F ${fmt(vv[3],1)} /100 g</div></div></button>`;}).join("")}</div>`:"");
+    $("#results").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>openPortion(parseFid(b.dataset.f),{meal:m,back}));
+    if(v.trim().length>=3) {$("#online").innerHTML=`<button class="btn ghost" id="onl" style="width:100%">Sök ”${esc(v.trim())}” online i Open Food Facts</button>`;$("#onl").onclick=()=>searchOnline(v.trim(),m,back);}
   };
   let t; qi.oninput=()=>{clearTimeout(t);t=setTimeout(show,80);};
   show(); setTimeout(()=>qi.focus(),50);
@@ -464,9 +486,13 @@ function openPortion(fid,{meal,back,item}={}){
   const v=foodVals(fid); if(!v) return;
   let g=item?item.g:(S.last[fid]||100), m=item?item.meal:meal;
   const name=foodName(fid);
-  sheet(item?"Ändra":name.length>28?"Mängd":name,`<div><h2 style="font-size:20px">${esc(name)}</h2>${typeof fid==="number"?`<span class="note">Livsmedelsverket nr ${fid}</span>`:`<span class="note">Eget livsmedel</span>`}</div>
+  const o=isOff(fid)?offRow(fid.slice(2)):null, cu=isCustom(fid)?S.custom.find(x=>x.id===fid):null;
+  const src=typeof fid==="number"?`Livsmedelsverket nr ${fid}`:o?`Open Food Facts · streckkod ${fid.slice(2)}`:`Eget livsmedel${cu&&cu.ean?` · streckkod ${cu.ean}`:""}`;
+  const sq=o&&o.sq?o.sq:0;
+  if(!item&&!S.last[fid]&&sq) g=sq;
+  sheet(item?"Ändra":name.length>28?"Mängd":name,`<div><h2 style="font-size:20px">${esc(name)}</h2><span class="note">${esc(src)}</span>${o&&!o.mic?`<div class="note">Förpackningen anger inga vitaminer eller mineraler, så varan ger inget tillskott i micros-fliken.</div>`:""}</div>
   <div class="gram"><button class="x" id="gMinus" aria-label="Minska">−</button><input id="g" type="number" inputmode="decimal" value="${g}" aria-label="Gram"><span>gram</span><button class="x" id="gPlus" aria-label="Öka">+</button></div>
-  <div class="chips" id="gChips">${[25,50,100,150,200,300].map(x=>`<button data-g="${x}">${x} g</button>`).join("")}</div>
+  <div class="chips" id="gChips">${sq?`<button data-g="${sq}">1 portion (${fmt(sq)} g)</button>`:""}${[25,50,100,150,200,300].map(x=>`<button data-g="${x}">${x} g</button>`).join("")}</div>
   <div class="chips" id="mChips">${MEALS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===m}">${n}</button>`).join("")}</div>
   <div class="label" id="lab"></div>
   <div class="row"><button class="btn" id="save" style="flex:1">${item?"Spara":"Lägg till"}</button>${item?`<button class="btn danger" id="del">Ta bort</button>`:""}</div>`, back||null);
@@ -491,6 +517,7 @@ function openPortion(fid,{meal,back,item}={}){
     const list=S.days[day]=S.days[day]||[];
     if(item){const it=list.find(x=>x.id===item.id); if(it){it.g=gg;it.meal=m;}}
     else list.push({id:uid(),fid,g:gg,meal:m});
+    if(o) S.prod[fid.slice(2)]=o;
     S.last[fid]=gg; S.recent=[fid,...S.recent.filter(x=>x!==fid)].slice(0,25);
     touch("day-"+day); touch("profile"); closeSheet(); tab="dag"; render(); toast(item?"Sparat":`${name.split(",")[0]} tillagd i ${MEALS.find(x=>x[0]===m)[1].toLowerCase()}`);
   };
@@ -498,19 +525,97 @@ function openPortion(fid,{meal,back,item}={}){
 }
 function openEdit(id){const it=(S.days[day]||[]).find(x=>x.id===id); if(it) openPortion(it.fid,{item:it});}
 
-function openCustom(id){
-  const c=id?S.custom.find(x=>x.id===id):{name:"",kcal:"",p:"",c:"",f:"",fib:"",sug:"",sat:"",salt:""};
+function openCustom(id,{ean="",name="",meal=null,back=null,why=""}={}){
+  const c=id?S.custom.find(x=>x.id===id):{name,ean,kcal:"",p:"",c:"",f:"",fib:"",sug:"",sat:"",salt:""};
   const F=[["kcal","Energi (kcal)"],["p","Protein (g)"],["c","Kolhydrater (g)"],["f","Fett (g)"],["fib","Fiber (g)"],["sug","varav socker (g)"],["sat","varav mättat fett (g)"],["salt","Salt (g)"]];
-  sheet(id?"Ändra eget livsmedel":"Nytt livsmedel",`<div class="field"><label for="cName">Namn</label><input id="cName" type="text" value="${esc(c.name)}" placeholder="t.ex. Proteinpulver vanilj"></div>
+  sheet(id?"Ändra eget livsmedel":ean?"Ny vara":"Nytt livsmedel",`${why?`<div class="hint"><span>${esc(why)}</span></div>`:""}<div class="field"><label for="cName">Namn</label><input id="cName" type="text" value="${esc(c.name)}" placeholder="t.ex. Proteinpulver vanilj"></div>
+  ${c.ean?`<span class="note">Streckkod ${esc(c.ean)}. Nästa gång du skannar den hittas varan direkt.</span>`:""}
   <p class="note" style="margin:0">Skriv värdena per 100 g, som på förpackningens näringsdeklaration.</p>
   <div class="grid2">${F.map(([k,l])=>`<div class="field"><label for="c_${k}">${l}</label><input id="c_${k}" type="number" inputmode="decimal" step="0.1" value="${c[k]??""}"></div>`).join("")}</div>
-  <div class="row"><button class="btn" id="cSave" style="flex:1">Spara</button>${id?`<button class="btn danger" id="cDel">Ta bort</button>`:""}</div>`);
+  <div class="row"><button class="btn" id="cSave" style="flex:1">${meal?"Spara och välj mängd":"Spara"}</button>${id?`<button class="btn danger" id="cDel">Ta bort</button>`:""}</div>`, back);
   $("#cSave").onclick=()=>{
     const name=$("#cName").value.trim(); if(!name){toast("Ge livsmedlet ett namn");return;}
-    const o=id?c:{id:"c:"+uid()}; o.name=name; for(const [k] of F) o[k]=parseFloat($("#c_"+k).value)||0;
-    if(!id) S.custom.push(o); touch("profile"); closeSheet(); render(); toast("Sparat");
+    if(!(parseFloat($("#c_kcal").value)>=0)){toast("Fyll i energi (kcal)");return;}
+    const o=id?c:{id:"c:"+uid()}; o.name=name; if(c.ean) o.ean=c.ean; for(const [k] of F) o[k]=parseFloat($("#c_"+k).value)||0;
+    if(!id) S.custom.push(o); touch("profile");
+    if(meal){openPortion(o.id,{meal});toast("Varan är sparad");return;}
+    closeSheet(); render(); toast("Sparat");
   };
   if(id) $("#cDel").onclick=()=>{S.custom=S.custom.filter(x=>x.id!==id);touch("profile");closeSheet();render();toast("Borttaget");};
+}
+
+/* ---------- Open Food Facts online ---------- */
+const OFF_FIELDS="code,product_name,product_name_sv,brands,nutriments,serving_quantity";
+const OFF_MIC=[["vitA","vitamin-a",1e6],["vitD","vitamin-d",1e6],["vitE","vitamin-e",1e3],["vitC","vitamin-c",1e3],["b1","vitamin-b1",1e3],["b2","vitamin-b2",1e3],["b3","vitamin-pp",1e3],["b6","vitamin-b6",1e3],["fol","vitamin-b9",1e6],["b12","vitamin-b12",1e6],["ca","calcium",1e3],["fe","iron",1e3],["mg","magnesium",1e3],["k","potassium",1e3],["zn","zinc",1e3],["se","selenium",1e6],["i","iodine",1e6],["ph","phosphorus",1e3],["na","sodium",1e3]];
+function offFromProduct(p){
+  if(!p) return null; const n=p.nutriments||{};
+  const num=k=>{const v=parseFloat(n[k+"_100g"]);return isFinite(v)&&v>=0?v:null;};
+  let kc=num("energy-kcal"); if(kc===null&&num("energy")!==null) kc=num("energy")/4.184;
+  const name=(p.product_name_sv||p.product_name||"").trim();
+  if(kc===null||num("proteins")===null||num("fat")===null||num("carbohydrates")===null) return {incomplete:true,name,brand:(p.brands||"").split(",")[0].trim()};
+  const mac=[Math.round(kc),num("proteins"),num("carbohydrates"),num("fat"),num("fiber")||0,num("sugars")||0,num("saturated-fat")||0,num("salt")||0];
+  const mic={}; for(const [k,ok,f] of OFF_MIC){const v=num(ok); if(v) mic[k]=v*f;}
+  const sq=parseFloat(p.serving_quantity);
+  return {name:name||"Namnlös vara",brand:(p.brands||"").split(",")[0].trim(),sq:sq>0&&sq<2000?sq:0,v:offVec(mac,mic),mic:Object.keys(mic).some(k=>k!=="na")};
+}
+function codeVariants(c){const s=new Set([c]);if(c.length===12)s.add("0"+c);if(c.length===13&&c[0]==="0")s.add(c.slice(1));return [...s];}
+async function lookupCode(code,meal,back){
+  code=code.replace(/\D/g,"");
+  const cu=S.custom.find(x=>x.ean&&codeVariants(code).includes(x.ean)); if(cu){openPortion(cu.id,{meal,back});return;}
+  for(const c of codeVariants(code)) if(offRow(c)){openPortion("o:"+c,{meal,back});return;}
+  sheet("Söker vara…",`<p class="note">Letar efter streckkod ${esc(code)} i Open Food Facts…</p>`,back);
+  let found=null;
+  try{
+    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}?fields=${OFF_FIELDS}`);
+    const d=await r.json(); if(d&&d.status===1) found=offFromProduct(d.product);
+  }catch(e){
+    openCustom(null,{ean:code,meal,back,why:"Du verkar vara offline, så varan kunde inte slås upp. Skriv av näringsvärdena från förpackningen så sparas varan med streckkoden."});return;
+  }
+  if(found&&!found.incomplete){S.prod[code]=found;touch("profile");openPortion("o:"+code,{meal,back});return;}
+  openCustom(null,{ean:code,meal,back,name:found?[found.name,found.brand].filter(Boolean).join(", "):"",why:found?"Varan finns i Open Food Facts men saknar näringsvärden. Skriv av dem från förpackningen.":"Varan finns inte i databasen än. Skriv av näringsvärdena från förpackningen så hittas den direkt nästa gång."});
+}
+async function searchOnline(q,meal,back){
+  const box=$("#online"); if(!box) return;
+  box.innerHTML=`<p class="note">Söker i Open Food Facts…</p>`;
+  try{
+    const r=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&fields=${OFF_FIELDS}`);
+    const d=await r.json(); const list=(d.products||[]).map(p=>[String(p.code||""),offFromProduct(p)]).filter(([c,o])=>c&&o&&!o.incomplete);
+    if(!$("#online")) return;
+    if(!list.length){box.innerHTML=`<p class="note">Inget hittades online heller. Skanna streckkoden eller lägg till varan själv under Mål.</p>`;return;}
+    const tmp=new Map(list);
+    box.innerHTML=`<div class="lbl" style="margin-bottom:6px">Från Open Food Facts</div><div class="res">${list.map(([c,o])=>`<button data-oc="${esc(c)}"><div class="n"><div>${esc(o.name)}${o.brand?`, ${esc(o.brand)}`:""}</div><div class="num">${fmt(o.v[0])} kcal · P ${fmt(o.v[1],1)} · K ${fmt(o.v[2],1)} · F ${fmt(o.v[3],1)} /100 g</div></div></button>`).join("")}</div>`;
+    box.querySelectorAll("[data-oc]").forEach(b=>b.onclick=()=>{const c=b.dataset.oc;S.prod[c]=tmp.get(c);touch("profile");openPortion("o:"+c,{meal,back});});
+  }catch(e){box.innerHTML=`<p class="note">Kunde inte nå Open Food Facts. Kontrollera att du har nät och försök igen.</p>`;}
+}
+
+/* ---------- Barcode scanner ---------- */
+let scanner=null, scanLib=null;
+function loadScanLib(){
+  if(window.Html5Qrcode) return Promise.resolve();
+  if(!scanLib) scanLib=new Promise((res,rej)=>{const s=document.createElement("script");s.src="vendor/html5-qrcode.min.js";s.onload=res;s.onerror=()=>{scanLib=null;rej();};document.head.appendChild(s);});
+  return scanLib;
+}
+function stopScan(){const s=scanner;scanner=null;if(s){try{s.stop().catch(()=>{}).finally(()=>{try{s.clear();}catch(e){}});}catch(e){}}}
+async function openScan(meal){
+  const back=()=>{stopScan();openAdd(meal);};
+  sheet("Skanna streckkod",`<div id="reader"></div>
+  <p class="note" id="scanMsg" style="margin:0">Håll streckkoden i rutan. Den läses av automatiskt.</p>
+  <div class="field"><label for="manCode">Eller skriv siffrorna under streckkoden</label><div class="searchrow"><input id="manCode" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="t.ex. 7310865004703"><button class="btn" id="manGo">Sök</button></div></div>`,back);
+  const done=code=>{stopScan();lookupCode(code,meal,back);};
+  $("#manGo").onclick=()=>{const c=$("#manCode").value.replace(/\D/g,"");if(c.length>=8)done(c);else toast("En streckkod har minst 8 siffror");};
+  try{await loadScanLib();}catch(e){$("#scanMsg").textContent="Skannern kunde inte laddas. Skriv in siffrorna i stället.";return;}
+  if(!$("#reader")) return;
+  const F=Html5QrcodeSupportedFormats;
+  const s=new Html5Qrcode("reader",{formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E],experimentalFeatures:{useBarCodeDetectorIfSupported:true},verbose:false});
+  scanner=s; let hit=false;
+  try{
+    await s.start({facingMode:"environment"},{fps:12,qrbox:(w,h)=>({width:Math.min(300,Math.floor(w*.85)),height:Math.min(160,Math.floor(h*.5))}),aspectRatio:1.333},
+      text=>{if(hit) return; const c=String(text).replace(/\D/g,""); if(c.length<8) return; hit=true; if(navigator.vibrate) navigator.vibrate(60); done(c);},()=>{});
+    if(scanner!==s){try{await s.stop();s.clear();}catch(e){}}
+  }catch(e){
+    scanner=null;
+    const m=$("#scanMsg"); if(m) m.textContent="Appen fick inte använda kameran. Tillåt kameran för den här sidan i Safari (aA-menyn → Webbplatsinställningar) eller skriv in siffrorna nedan.";
+  }
 }
 
 let toastT; function toast(msg){$("#toastRoot").innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>$("#toastRoot").innerHTML="",2400);}
@@ -528,6 +633,13 @@ fetch("foods.json").then(r=>r.json()).then(d=>{
   KEYS=d.keys;
   for(const r of d.foods){const [nr,name,...v]=r;FOODS.set(nr,{name,v});FLIST.push({fid:nr,name,nn:norm(name)});}
   foodsReady=true; render(); if(root.innerHTML&&$("#q")) $("#q").dispatchEvent(new Event("input"));
+  return fetch("off.json").then(r=>r.json()).then(o=>{
+    for(const [code,name,brand,sq,mac,mic] of o.rows){
+      OFF.set(code,{name,brand,sq,v:offVec(mac,mic),mic:!!mic&&Object.keys(mic).some(k=>k!=="na")});
+      OLIST.push({fid:"o:"+code,name,off:true,nn:norm(name+" "+brand)});
+    }
+    offReady=true; render(); if(root.innerHTML&&$("#q")) $("#q").dispatchEvent(new Event("input"));
+  }).catch(()=>{offReady=true;});
 }).catch(()=>toast("Kunde inte ladda livsmedelsdatabasen. Ladda om sidan."));
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
